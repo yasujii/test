@@ -1,0 +1,8 @@
+*.mp4
+*.avi
+*.mov
+*.png
+*.jpg
+*.jpeg
+__pycache__/
+*.pyc
