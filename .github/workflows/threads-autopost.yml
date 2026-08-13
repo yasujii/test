@@ -1,0 +1,54 @@
+name: 桜腸活 Threads 自動投稿
+
+# JST（日本時間）の 06:00 / 08:00 / 10:00 / 13:00 / 21:00 に投稿します。
+# GitHub Actions の cron は UTC（世界標準時）なので、-9時間して書いています。
+# 例: 06:00 JST = 21:00 UTC（前日）。数分の遅延が出ることがあります(仕様)。
+on:
+  schedule:
+    - cron: "3 21 * * *"   # 06:00 JST（朝ツリー）
+    - cron: "3 23 * * *"   # 08:00 JST（単発）
+    - cron: "3 1 * * *"    # 10:00 JST（単発）
+    - cron: "3 4 * * *"    # 13:00 JST（単発）
+    - cron: "3 12 * * *"   # 21:00 JST（夜ツリー）
+  workflow_dispatch:        # 手動実行ボタン（テスト用）
+
+# posted_log.json を書き戻すために書き込み権限が必要
+permissions:
+  contents: write
+
+# 同時に複数動いて二重投稿しないように直列化
+concurrency:
+  group: threads-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 投稿を実行
+        env:
+          # トークンは「Secrets」から渡す（コードには絶対書かない）
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}   # 任意（未設定でも自動取得）
+        run: python threads-autopost/post_to_threads.py
+
+      - name: 投稿済みログを保存（変更があれば）
+        if: always()
+        run: |
+          if ! git diff --quiet -- threads-autopost/posted_log.json; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add threads-autopost/posted_log.json
+            git commit -m "chore: update posted_log [skip ci]"
+            git push
+          else
+            echo "posted_log.json に変更なし"
+          fi
