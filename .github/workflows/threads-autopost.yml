@@ -16,6 +16,9 @@ on:
         description: "トークン確認のみ（投稿せず、接続とアカウントだけ確認）"
         type: boolean
         default: false
+  push:
+    branches: ["claude/video-editing-image-05T5N"]   # デフォルトブランチへのpushで発火。その時刻に公開すべき投稿を出す（Runボタンを押せない時のトリガー代わり）
+    paths: ["threads-autopost/threads_posts.json", ".github/workflows/threads-autopost.yml"]
 
 # posted_log.json を書き戻すために書き込み権限が必要
 permissions:
