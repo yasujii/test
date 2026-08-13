@@ -11,6 +11,11 @@ on:
     - cron: "3 4 * * *"    # 13:00 JST（単発）
     - cron: "3 12 * * *"   # 21:00 JST（夜ツリー）
   workflow_dispatch:        # 手動実行ボタン（テスト用）
+    inputs:
+      verify:
+        description: "トークン確認のみ（投稿せず、接続とアカウントだけ確認）"
+        type: boolean
+        default: false
 
 # posted_log.json を書き戻すために書き込み権限が必要
 permissions:
@@ -38,6 +43,7 @@ jobs:
           # トークンは「Secrets」から渡す（コードには絶対書かない）
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}   # 任意（未設定でも自動取得）
+          VERIFY_ONLY: ${{ inputs.verify }}                 # 手動実行で確認モードにする用（定期実行では空=通常投稿）
         run: python threads-autopost/post_to_threads.py
 
       - name: 投稿済みログを保存（変更があれば）

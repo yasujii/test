@@ -39,6 +39,8 @@ PUBLISH_WAIT_SEC = 5
 
 TOKEN = os.environ.get("THREADS_ACCESS_TOKEN", "").strip()
 USER_ID = os.environ.get("THREADS_USER_ID", "").strip()
+# 確認モード: /me を1回叩いてトークンの有効性だけ確かめ、投稿は一切しない
+VERIFY_ONLY = os.environ.get("VERIFY_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def die(msg):
@@ -113,6 +115,12 @@ def load_json(path, default):
 def main():
     if not TOKEN:
         die("環境変数 THREADS_ACCESS_TOKEN が未設定です。GitHub の Secrets に登録してください。")
+
+    if VERIFY_ONLY:
+        me = api_get("me", {"fields": "id,username", "access_token": TOKEN})
+        print(f"[verify] トークン有効。user_id={me['id']} username=@{me.get('username','?')}")
+        print("[verify] 投稿はしていません（確認のみ）。")
+        return
 
     data = load_json(POSTS_FILE, {"posts": []})
     log = load_json(LOG_FILE, {"posted_ids": []})
