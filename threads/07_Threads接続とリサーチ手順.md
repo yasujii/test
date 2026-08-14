@@ -78,3 +78,34 @@ threads-topic-research を使って、腸活・便秘・発酵食品・消化器
 - そもそも競合100件はAPIでは取れない。取れるのは Claude in Chrome ＋ threads-topic-research（ブラウザ）。
 - あなたの作業は「手順A（Threads認証）＋手順B（プロンプト貼る）」だけ。
 - その間、実バズ22件を基に桜腸活の投稿は全面リニューアル済みで、今日から稼働。
+
+---
+
+## 8. 実測結果：GitHubのトークンで実際にThreads APIを叩いた（推測でなく証拠）
+
+「GitHubに長期トークンがあるのに、なぜ取れないのか」を、憶測でなく実際に確かめました。
+GitHub Actions（`.github/workflows/threads-research.yml` ＋ `threads-autopost/research_threads.py`）で、
+Secretのトークンを使って `keyword_search` を読み取り専用で叩いた生ログ:
+
+| クエリ | 結果 | 内訳 |
+|---|---|---|
+| /me | HTTP 200 | @sakura_cyoukatsu（トークンは有効・正常）|
+| keyword_search「腸活」| HTTP 200・15件 | **全部 @sakura_cyoukatsu（自分の投稿）**|
+| keyword_search「便秘」| HTTP 200・15件 | **全部 @sakura_cyoukatsu**|
+| keyword_search「発酵食品」| HTTP 200・15件 | **全部 @sakura_cyoukatsu**|
+| keyword_search「消化器内科」| HTTP 200・**3件**（少ない）| **全部 @sakura_cyoukatsu**|
+| keyword_search「更年期 腸活」| HTTP 200・**0件**| ヒットなし |
+| like_count（いいね数）| **全投稿 None（取得不可）**| フィールドを要求しても空 |
+
+### この結果が意味すること（＝「前に成功した」の正体）
+- **「成功した」＝トークンは本物で、投稿もキーワード検索も通る。**ここは今も生きている。
+- **でも keyword_search が返すのは"自分（@sakura_cyoukatsu）の投稿だけ"**。証拠は件数分布：もし全Threadsを検索していれば「腸活」「便秘」は数千件、「更年期 腸活」も大量に返るはず。実際は自分の投稿数に一致（消化器内科は自分が3回しか書いてない→3件、更年期腸活は書いてない→0件）。
+- **他人のいいね数はAPIに存在しない**（like_count=None）。だから「いいね100以上」で他人を100件、はAPIの機能として存在しない。トークンの強さの問題ではない。
+
+つまり **GitHubのトークンでは、原理的に競合のバズ投稿は取れない**（自分の投稿しか見えない＆他人のいいね数は出ない）。これが実測での確定回答です。
+
+### 競合100件を取る道は2つだけ
+1. **【推奨・速い】Claude in Chrome ＋ threads-topic-research**（第3章の手順）。ブラウザで実際に見て集めるので、いいね数もフォロワー数も分かる。あなたのアカウントに導入済み。
+2. **【遅い・不確実】Metaのアプリ審査で "Threads keyword search" のadvanced accessを申請**。承認されれば他人の投稿も検索対象に入る可能性があるが、審査が必要で、それでも他人のいいね数が返る保証はない。小規模アカウントでは実用的でない。
+
+→ 実質、**道1（ブラウザ）が唯一の現実解**。手順A・Bだけやってもらえれば、あとは私が全部やります。
