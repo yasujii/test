@@ -1,31 +1,15 @@
 name: 桜腸活 Threads 自動投稿
 
-# 各投稿時刻ピッタリに明示cronを置く方式（*/15 はGitHubに間引かれ2〜4時間ごとにしか回らなかったため）。
-# cronはUTC。JSTの各投稿時刻の2分後に置いている（GitHubの定期実行は遅れる仕様なので、その頃には対象が「公開すべき」状態になる）。
-# 実際の公開はGitHubの遅延で予約時刻から数十分ずれることがある。二重投稿は posted_log.json で防ぐ。
+# 自動投稿は【停止中】。ユーザーが手動投稿へ切り替えたため、2026-08-18に
+# 定期実行(schedule)とpushトリガーを外し、手動実行(workflow_dispatch)だけ残した。
+# 再開したいときは、以前の schedule と push ブロックを戻せばよい。
 on:
-  schedule:
-    - cron: "2 21 * * *"    # 06:02 JST
-    - cron: "12 22 * * *"   # 07:12 JST
-    - cron: "2 23 * * *"    # 08:02 JST
-    - cron: "12 0 * * *"    # 09:12 JST
-    - cron: "2 1 * * *"     # 10:02 JST
-    - cron: "2 3 * * *"     # 12:02 JST
-    - cron: "12 3 * * *"    # 12:12 JST
-    - cron: "2 4 * * *"     # 13:02 JST
-    - cron: "2 6 * * *"     # 15:02 JST
-    - cron: "12 6 * * *"    # 15:12 JST
-    - cron: "2 12 * * *"    # 21:02 JST
-    - cron: "2 13 * * *"    # 22:02 JST
-  workflow_dispatch:        # 手動実行ボタン（テスト用）
+  workflow_dispatch:        # 手動実行ボタンのみ（自動投稿は停止中）
     inputs:
       verify:
         description: "トークン確認のみ（投稿せず、接続とアカウントだけ確認）"
         type: boolean
         default: false
-  push:
-    branches: ["claude/video-editing-image-05T5N"]   # デフォルトブランチへのpushで発火。その時刻に公開すべき投稿を出す（Runボタンを押せない時のトリガー代わり）
-    paths: ["threads-autopost/threads_posts.json", "threads-autopost/.trigger", ".github/workflows/threads-autopost.yml"]
 
 # posted_log.json を書き戻すために書き込み権限が必要
 permissions:
