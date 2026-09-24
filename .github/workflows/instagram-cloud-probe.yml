@@ -1,0 +1,78 @@
+name: Instagram cloud probe (no secrets)
+
+on:
+  push:
+    branches: ["codex/instagram-cloud-probe-20260924"]
+    paths: [".github/workflows/instagram-cloud-probe.yml"]
+
+permissions: {}
+concurrency:
+  group: instagram-cloud-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Install the pinned public API client
+        run: python3 -m pip install --disable-pip-version-check --quiet 'instagrapi==3.0.13'
+      - name: Probe one documentation example without authentication
+        run: |
+          python3 - <<'PY'
+          import contextlib
+          import importlib.metadata
+          import io
+          import json
+          import logging
+          import os
+          import socket
+          from datetime import datetime, timezone
+          from instagrapi import Client
+
+          # Public example from the client's own documentation; not a user-selected target.
+          # Never read repository Secrets, log in, save comments, or retry denials.
+          report = {
+              'tested_at_utc': datetime.now(timezone.utc).isoformat(),
+              'environment': 'github_hosted_ubuntu',
+              'instagrapi_version': importlib.metadata.version('instagrapi'),
+              'sample_kind': 'upstream_documentation_example_not_user_target',
+              'sample_url': 'https://www.instagram.com/p/CjPUjEvDKT4/',
+              'credentials_used': False,
+              'comment_text_published': False,
+              'comments_received': 0,
+              'real_comments_verified': False,
+              'all_comments_guaranteed': False,
+          }
+          for host in ('api.github.com', 'www.instagram.com', 'graph.facebook.com'):
+              try:
+                  socket.getaddrinfo(host, 443)
+                  report.setdefault('dns', {})[host] = 'resolved'
+              except OSError as exc:
+                  report.setdefault('dns', {})[host] = type(exc).__name__
+          logging.disable(logging.CRITICAL)
+          client = Client(public_request_retries_count=1, session_retry_total=0)
+          client.read_timeout = 15
+          client.request_timeout = 2
+          report['method_available'] = hasattr(client, 'media_comments_public_gql')
+          try:
+              with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                  rows = client.media_comments_public_gql('CjPUjEvDKT4', amount=5, max_requests=1)
+              count = sum(isinstance(row, dict) and bool(str(row.get('text', '')).strip()) for row in rows)
+              report['comments_received'] = count
+              report['real_comments_verified'] = count > 0
+              report['result'] = 'COMMENTS_RECEIVED' if count else 'NO_COMMENT_TEXT_RETURNED'
+          except Exception as exc:
+              report['result'] = 'REQUEST_FAILED'
+              report['exception_type'] = type(exc).__name__
+          response = getattr(client, 'last_public_response', None)
+          if response is not None:
+              report['http_status'] = response.status_code
+              report['response_content_type'] = response.headers.get('content-type', '').split(';')[0]
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('# Instagram cloud probe\n\n```json\n')
+              out.write(json.dumps(report, ensure_ascii=False, indent=2))
+              out.write('\n```\n\nA green workflow means the probe completed, not that Instagram comments were obtained.\n')
+          PY
