@@ -1,0 +1,13 @@
+.venv/
+.local-tools/
+.runtimes/
+.uv-cache/
+.state/
+output/
+reports/
+__pycache__/
+*.pyc
+*.pem
+*.key
+.env*
+!request.example.json
