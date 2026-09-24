@@ -24,13 +24,10 @@ jobs:
       - name: Test parser and encrypted exports
         run: python3 -m unittest discover -s cloud/instagram-comments/tests -v
       - name: Read public comments; only encrypted text leaves runner
+        shell: bash
         run: |
-          python3 cloud/instagram-comments/collector.py runner --request cloud/instagram-comments/request.json > encrypted-export.log
-          python3 - <<'PY'
-          from pathlib import Path
-          text=Path('encrypted-export.log').read_text()
-          print(text.split('IG_EXPORT_START')[0])
-          PY
+          set -o pipefail
+          python3 cloud/instagram-comments/collector.py runner --request cloud/instagram-comments/request.json | tee encrypted-export.log
       - name: Return encrypted export
         if: always()
         uses: actions/upload-artifact@v4
