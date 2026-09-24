@@ -1,17 +1,14 @@
 name: Instagram comments (anonymous, encrypted)
-
 on:
   push:
     branches: ["codex/instagram-cloud-probe-20260924"]
     paths: ["cloud/instagram-comments/request.json"]
   workflow_dispatch:
-
 permissions:
   contents: read
 concurrency:
   group: instagram-comments
   cancel-in-progress: false
-
 jobs:
   collect:
     if: github.event.repository.private == false
@@ -26,5 +23,19 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check --quiet -r cloud/instagram-comments/requirements.txt
       - name: Test parser and encrypted exports
         run: python3 -m unittest discover -s cloud/instagram-comments/tests -v
-      - name: Read public comments and export ciphertext only
-        run: python3 cloud/instagram-comments/collector.py runner --request cloud/instagram-comments/request.json
+      - name: Read public comments; only encrypted text leaves runner
+        run: |
+          python3 cloud/instagram-comments/collector.py runner --request cloud/instagram-comments/request.json > encrypted-export.log
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('encrypted-export.log').read_text()
+          print(text.split('IG_EXPORT_START')[0])
+          PY
+      - name: Return encrypted export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-encrypted-${{ github.run_id }}
+          path: encrypted-export.log
+          retention-days: 1
+          if-no-files-found: error
