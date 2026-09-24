@@ -1,53 +1,29 @@
-name: Instagram gut-health post discovery
+name: Instagram gut-health post-link discovery
 on:
   push:
     branches: ["codex/instagram-cloud-probe-20260924"]
     paths: [".github/workflows/instagram-gut-discovery.yml"]
 permissions: {}
-concurrency:
-  group: instagram-comments
-  cancel-in-progress: false
 jobs:
   discover:
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 3
     steps:
-      - name: Install fixed public client
-        run: python3 -m pip install --disable-pip-version-check --quiet instagrapi==3.0.13
-      - name: Discover public posts only; never log comment authors or credentials
+      - name: Read outbound post links from already identified articles only
         run: |
           python3 - <<'PY'
-          import contextlib,io,json,logging,time
-          from instagrapi import Client
-          logging.disable(logging.CRITICAL)
-          c=Client(public_request_retries_count=1,session_retry_total=0)
-          c.read_timeout=15
-          c.request_timeout=2
-          accounts=['ami_healthy_sweets','excebelle','shiori_wellness_kitchen','tomomi_mutenka','kanal_recipe']
+          import urllib.request, re, html, json, time
+          sources=['https://note.com/myscrapbook/n/n2b51a8759f5a','https://39mag.thankyu.co.jp/article/beauty/diet/67468/','https://woman.tvbs.com.tw/beauty/63757','https://ameblo.jp/kikitti33/entry-12905862960.html']
           result=[]
-          for username in accounts:
-              item={'username':username,'status':'not_tested','posts':[]}
+          for u in sources:
+              row={'discovery_source':u}
               try:
-                  with contextlib.redirect_stdout(io.StringIO()),contextlib.redirect_stderr(io.StringIO()):
-                      user=c.user_info_by_username_gql(username)
-                  data=c.last_public_response.json().get('data',{}).get('user',{})
-                  if data.get('is_private') is not False:
-                      item['status']='private_or_unknown_skipped'
-                  else:
-                      item.update(status='public_profile_received',biography=data.get('biography',''),followers=data.get('edge_followed_by',{}).get('count'))
-                      for edge in data.get('edge_owner_to_timeline_media',{}).get('edges',[])[:12]:
-                          n=edge['node']; code=n.get('shortcode')
-                          captions=n.get('edge_media_to_caption',{}).get('edges',[])
-                          item['posts'].append({'url':f'https://www.instagram.com/p/{code}/','caption':captions[0]['node'].get('text','')[:1100] if captions else '', 'comments_count':n.get('edge_media_to_comment',n.get('edge_media_to_parent_comment',{})).get('count'), 'timestamp':n.get('taken_at_timestamp')})
-              except Exception as exc:
-                  r=getattr(exc,'response',None)
-                  if r is None:r=getattr(c,'last_public_response',None)
-                  status=getattr(r,'status_code',None)
-                  item.update(status='failed',exception=type(exc).__name__,http_status=status)
-                  result.append(item)
-                  if status in (401,403,429) or any(s in type(exc).__name__ for s in ['Login','Challenge','Throttled','Forbidden']):break
-                  time.sleep(4);continue
-              result.append(item);time.sleep(4)
-          print(json.dumps({'purpose':'select posts only; no comments collected yet','profiles':result},ensure_ascii=False,indent=2))
+                  req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=15) as r: s=r.read(5000000).decode('utf-8','replace')
+                  s=html.unescape(s).replace('\\/','/')
+                  row['instagram_post_urls']=list(dict.fromkeys(re.findall(r'https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/[A-Za-z0-9_-]+/?',s)))
+              except Exception as e:row['error']=type(e).__name__
+              result.append(row);time.sleep(2)
+          print(json.dumps({'scope':'links only, not testimonial content','sources':result},ensure_ascii=False,indent=2))
           PY
