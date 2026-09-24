@@ -1,0 +1,51 @@
+name: Instagram authenticated comments (secret-only)
+on:
+  push:
+    branches: ["codex/instagram-cloud-probe-20260924"]
+    paths: ["cloud/instagram-comments/login-request.json"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: instagram-comments
+  cancel-in-progress: false
+jobs:
+  authenticated-collect:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check secure credential availability; never print values
+        env:
+          IG_RESEARCH_LOGIN: ${{ secrets.IG_RESEARCH_LOGIN }}
+          IG_RESEARCH_PASSWORD: ${{ secrets.IG_RESEARCH_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          missing=[n for n in ('IG_RESEARCH_LOGIN','IG_RESEARCH_PASSWORD') if not os.getenv(n)]
+          result={'result':'SECRETS_MISSING' if missing else 'SECRETS_AVAILABLE', 'login_attempted':False, 'missing':missing}
+          print(json.dumps(result))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('Credential preflight only; this step does not log in.\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n')
+          sys.exit(2 if missing else 0)
+          PY
+      - name: Check out this exact commit without retained credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install pinned dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet -r cloud/instagram-comments/requirements.txt
+      - name: One login; read public comments; stop on verification or denial
+        env:
+          IG_RESEARCH_LOGIN: ${{ secrets.IG_RESEARCH_LOGIN }}
+          IG_RESEARCH_PASSWORD: ${{ secrets.IG_RESEARCH_PASSWORD }}
+          IG_RESEARCH_2FA_CODE: ${{ secrets.IG_RESEARCH_2FA_CODE }}
+        run: python3 cloud/instagram-comments/authenticated_probe.py cloud/instagram-comments/login-request.json
+      - name: Return encrypted result only
+        if: always() && hashFiles('authenticated-export.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: instagram-authenticated-encrypted-${{ github.run_id }}
+          path: authenticated-export.json
+          retention-days: 1
+          if-no-files-found: error
