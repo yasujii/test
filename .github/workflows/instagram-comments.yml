@@ -1,0 +1,30 @@
+name: Instagram comments (anonymous, encrypted)
+
+on:
+  push:
+    branches: ["codex/instagram-cloud-probe-20260924"]
+    paths: ["cloud/instagram-comments/request.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: instagram-comments
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Read this exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install fixed dependencies
+        run: python3 -m pip install --disable-pip-version-check --quiet -r cloud/instagram-comments/requirements.txt
+      - name: Test parser and encrypted exports
+        run: python3 -m unittest discover -s cloud/instagram-comments/tests -v
+      - name: Read public comments and export ciphertext only
+        run: python3 cloud/instagram-comments/collector.py runner --request cloud/instagram-comments/request.json
