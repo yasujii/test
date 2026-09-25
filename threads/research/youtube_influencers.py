@@ -73,8 +73,27 @@ EN_OFFICIAL = re.compile(
 EN_COUNTRIES = {"US", "GB", "CA", "AU", "NZ", "IE"}
 JP_CHARS = re.compile(r"[぀-ヿ一-鿿]")
 
-# 目で確認して「個人ではない」と判断したチャンネル（名前の一部。実行後の目視確認で追加）
-MANUAL_EXCLUDE = re.compile(r"$^")
+# 目で確認して除外したチャンネル（2026-09-25 の目視確認）
+#  個人ではない：制作会社・クリニック（医院の名前のチャンネル）・企業ブランド・団体・まとめ/切り抜き
+#  腸活と関係ない：お笑いコント・動物・映像作品・雑学アニメ・睡眠用BGM・大食い（うんこネタで500コメ超えただけ）
+# チャンネル名は公開リポジトリに載せないため、リストは raw/youtube/manual_exclude.txt（.gitignore 済み）に置く
+def _load_manual_exclude():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raw", "youtube", "manual_exclude.txt")
+    try:
+        pats = [l.strip() for l in open(path, encoding="utf-8") if l.strip() and not l.startswith("#")]
+    except OSError:
+        pats = []
+    return re.compile("|".join(pats) if pats else r"$^")
+
+
+MANUAL_EXCLUDE = _load_manual_exclude()
+
+JP_EXTRA_QUERIES = [
+    ("便秘解消 ストレッチ", "relevance"), ("腸活 痩せた", "relevance"), ("腸活 vlog", "relevance"),
+    ("腸活 管理栄養士", "relevance"), ("腸内環境 医師 解説", "relevance"), ("ヨーグルト 腸活", "relevance"),
+    ("納豆 腸活", "relevance"), ("オートミール 便秘", "relevance"), ("キウイ 便秘", "relevance"),
+    ("腸活 40代", "relevance"), ("腸活 朝ごはん", "relevance"),
+]
 
 
 def log(m):
@@ -216,7 +235,7 @@ def mark_qualified(db, region):
     return len(rows[:MAX_CH[region]])
 
 
-def fetch_comments(cli, db, region, units_cap, per_channel, per_video_pages, max_videos):
+def fetch_comments(cli, db, region, units_cap, per_channel, per_video_pages, max_videos, min_comments=MIN_COMMENTS):
     total = db.execute("SELECT COUNT(*) FROM yi_comments WHERE region=?", (region,)).fetchone()[0]
     chans = db.execute("SELECT channel_id FROM yi_channels WHERE region=? AND qualified=1 ORDER BY subscriber_count DESC",
                        (region,)).fetchall()
@@ -226,7 +245,7 @@ def fetch_comments(cli, db, region, units_cap, per_channel, per_video_pages, max
         got = db.execute("SELECT COUNT(*) FROM yi_comments cm JOIN yi_videos v ON v.video_id=cm.video_id WHERE v.channel_id=?",
                          (ch,)).fetchone()[0]
         vids = db.execute("""SELECT video_id FROM yi_videos WHERE channel_id=? AND relevant=1 AND comments_fetched=0
-                             AND comment_count>=? ORDER BY comment_count DESC LIMIT ?""", (ch, MIN_COMMENTS, max_videos)).fetchall()
+                             AND comment_count>=? ORDER BY comment_count DESC LIMIT ?""", (ch, min_comments, max_videos)).fetchall()
         for (vid,) in vids:
             if got >= per_channel or total >= TARGET_COMMENTS[region]:
                 break
@@ -275,7 +294,9 @@ def collect(a):
     cli = Client(a.max_units)
     log(f"認証: {'APIキー' if cli.key else 'サービスアカウント'} / 上限 {a.max_units} ユニット")
     # 予算: 検索 JP 2,600 + EN 2,000、残りをチャンネル調査とコメントに
-    for region, queries, cap in (("jp", JP_QUERIES, 2700), ("en", EN_QUERIES, 4700)):
+    plans = [("jp", JP_EXTRA_QUERIES, a.max_units - 900)] if a.extra_jp else \
+        [("jp", JP_QUERIES, 2700), ("en", EN_QUERIES, 4700)]
+    for region, queries, cap in plans:
         if a.skip_search:
             break
         found = search_all(cli, db, region, queries, cap)
@@ -384,10 +405,12 @@ POS = {"jp": re.compile(r"出(まし|ました|た！|た!|たー|てき|るよ�
                         r"ぺたんこ|ペタンコ|へこ|凹|毎日出|バナナうんち|感動|おすすめ|オススメ|続けてい|最高|治まり|おさま|減りました|減った"),
        "en": re.compile(r"\b(it )?worked\b|works (great|wonders)|helped|help(s|ed) me|game ?changer|life ?changing|"
                         r"finally (pooped|went)|went (to the bathroom|within)|so much better|no more bloat|less bloat|"
-                        r"regular now|changed my life|amazing results|highly recommend|saved me|feel (so much )?better")}
+                        r"regular now|changed my life|amazing results|highly recommend|saved me|feel (so much )?better|"
+                        r"improved|noticed a (big |huge )?difference|no longer|fixed my|cured my|healed my|helps (a lot|so much)",
+                        re.IGNORECASE)}
 NEG = {"jp": re.compile(r"効かな|効果(が)?な|出ない(まま|です)|変わらな|悪化|逆に|余計に|合わな|張って(しま|きた)|痛くな|下痢にな|ダメ|だめで|意味(が)?な"),
        "en": re.compile(r"didn'?t (work|help)|doesn'?t (work|help)|made (it|me|things) worse|no (results|change|difference)|"
-                        r"worse|didn'?t do anything|nothing (worked|helps)|gave me (gas|diarrhea|cramps)|more bloated")}
+                        r"worse|didn'?t do anything|nothing (worked|helps)|gave me (gas|diarrhea|cramps)|more bloated", re.IGNORECASE)}
 TRIED = {"jp": re.compile(r"試し|やってみ|飲んでみ|食べてみ|続けて|始めて|飲み始め|食べ始め|毎日|を飲んで|を食べて|取り入れ|実践|したら|したところ|てから"),
          "en": re.compile(r"\bi (tried|started|have been|'ve been|take|took|eat|ate|drink|drank|added|did|do)\b|since i|after (i|a week|2 weeks)|"
                           r"i've tried|been taking|been eating|been drinking", re.IGNORECASE)}
@@ -404,6 +427,33 @@ WORRIES = [
     ("肌荒れ・体重・むくみ", r"肌荒れ|ニキビ|体重|むくみ|痩せ", r"acne|skin|weight|puffy"),
     ("更年期・ホルモン・生理", r"更年期|生理|ホルモン|妊娠|産後", r"menopaus|period|hormon|pregnan|postpartum"),
 ]
+# D. 海外の流行りが日本にどれくらいあるか（タイトル＋説明文＋コメントで数える）
+TRENDS = [
+    ("ファイバーマキシング", r"ファイバーマキシング|ファイバーマックス", r"fib(er|re)\s?maxx?ing|fib(er|re) ?max"),
+    ("キウイ（1日2個）", r"キウイ", r"kiwi"),
+    ("週30種類の植物", r"30種類|30品目", r"30 (different )?plants|plant diversity|plant points"),
+    ("グリーンバナナ粉・難消化性でんぷん", r"グリーンバナナ|レジスタントスターチ", r"green banana|resistant starch"),
+    ("サイリウム（オオバコ）", r"サイリウム|オオバコ", r"psyllium|metamucil"),
+    ("チアシード水（インターナルシャワー）", r"チアシード", r"chia|internal shower"),
+    ("ケフィア", r"ケフィア", r"kefir"),
+    ("コンブチャ", r"コンブチャ|紅茶キノコ", r"kombucha"),
+    ("ザワークラウト", r"ザワークラウト", r"sauerkraut"),
+    ("ジンジャーバグ・手作り発酵ソーダ", r"ジンジャーバグ|発酵ソーダ|発酵ジンジャー", r"ginger bug|probiotic soda"),
+    ("足台（スクワッティポッティ）", r"踏み台|足台|スクワッティ", r"squatty|squat(ting)? potty|toilet stool|foot ?stool"),
+    ("りんご酢", r"りんご酢|リンゴ酢", r"apple cider vinegar|\bACV\b"),
+    ("ボーンブロス", r"ボーンブロス", r"bone broth"),
+    ("プルーン（ジュース）", r"プルーン", r"prune"),
+    ("ひまし油（キャスターオイル）", r"ひまし油|ヒマシ油", r"castor oil"),
+    ("低FODMAP食", r"FODMAP|フォドマップ", r"FODMAP"),
+    ("SIBO（小腸の菌の増えすぎ）", r"SIBO|シーボ", r"SIBO"),
+    ("リーキーガット", r"リーキーガット", r"leaky gut"),
+    ("便移植", r"便移植|腸内細菌移植", r"poop transplant|fecal transplant|\bFMT\b"),
+    ("納豆", r"納豆", r"natto"),
+    ("ぬか漬け・味噌・甘酒（和の発酵）", r"ぬか漬|糠漬|味噌|甘酒", r"miso|amazake|nukazuke"),
+    ("腸もみ", r"腸もみ", r"abdominal massage|colon massage|I-?L-?U massage|stomach massage"),
+    ("梅流し", r"梅流し", r"$^"),
+]
+
 CLAIM = {"jp": re.compile(r"(\d+|一|二|三|四|五|六|七|八|九|十)\s*(日|週間|ヶ月|か月|カ月|ヵ月|年)|毎日|続けた|変化|結果|激変|ぺたんこ|ペタンコ|-\d|減|出た|スッキリ|快便"),
          "en": re.compile(r"\b(\d+|one|two|three|four|five|seven|ten|thirty)\s*(day|week|month|year)s?\b|results|changed|transform|before (and|&) after|healed|fixed|cured|i tried", re.IGNORECASE)}
 
@@ -486,6 +536,21 @@ def analyze(a):
         R["samples"] = samples
         R["worries"] = worry_n.most_common()
         out[region] = R
+    # D. 流行りの比較（1万件あたり・チャンネル数）
+    trend = []
+    for name, pj, pe in TRENDS:
+        row = {"trend": name}
+        for region, pat in (("jp", pj), ("en", pe)):
+            rx = re.compile(pat, 0 if region == "jp" else re.IGNORECASE)
+            vids = db.execute("""SELECT c.title, v.title, v.description FROM yi_videos v JOIN yi_channels c ON c.channel_id=v.channel_id
+                                 WHERE c.qualified=1 AND v.region=?""", (region,)).fetchall()
+            chs = {c for c, t, d in vids if rx.search(f"{t} {d or ''}")}
+            cm = db.execute("SELECT text FROM yi_comments WHERE region=?", (region,)).fetchall()
+            n = sum(1 for (t,) in cm if rx.search(t))
+            row[region] = {"channels": len(chs), "videos": sum(1 for c, t, d in vids if rx.search(f"{t} {d or ''}")),
+                           "comments": n, "per10k": round(n * 10000 / max(len(cm), 1), 1)}
+        trend.append(row)
+    out["trends"] = trend
     # F. 数字
     out["counts"] = {
         "runs": db.execute("SELECT * FROM yi_runs").fetchall(),
@@ -510,6 +575,7 @@ def main():
     ap.add_argument("--scan-pages", type=int, default=2, help="1チャンネルあたり新しい順に何ページ（50本/ページ）調べるか")
     ap.add_argument("--en-scan-reserve", type=int, default=900, help="日本の調査中に残しておく海外調査用ユニット")
     ap.add_argument("--skip-search", action="store_true")
+    ap.add_argument("--extra-jp", action="store_true", help="日本の追加の検索語だけで検索し直す（2回目の実行用）")
     ap.add_argument("--analyze", action="store_true")
     a = ap.parse_args()
     if a.analyze:
