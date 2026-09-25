@@ -6,13 +6,15 @@ Threads の長期アクセストークン（60日で期限切れ）を延長し�
 - GET /v1.0/me で、今のトークンが使えるかを確認（使えなければ止まる）
 - GET /refresh_access_token?grant_type=th_refresh_token で延長（新しい60日のトークンが返る）
   ※ 発行から24時間以上たっていて、まだ期限が切れていないトークンだけ延長できる
-- 新しいトークンで GET /v1.0/me が通ることを確かめてから、gh secret set で Secret を上書き
+- 新しいトークンで GET /v1.0/me が通ることを確かめる
+- 文字が同じまま期限だけ延びた場合は何もしない。新しい文字が発行された場合だけ gh secret set で Secret を上書き
 - トークンはログに一切出さない（GitHub のマスク機能にも登録する）
 - 投稿・削除などの書き込みは一切しない（Threads に対しては GET のみ）
 
 環境変数:
   THREADS_ACCESS_TOKEN  今のトークン（Secret から渡す）
-  GH_TOKEN              Secret を書き換えるための GitHub トークン（Secret「GH_SECRETS_PAT」から渡す）
+  GH_TOKEN              Secret を書き換えるための GitHub トークン（Secret「GH_SECRETS_PAT」から渡す。
+                        延長でトークンの文字が変わったときだけ必要）
   DRY_RUN               "true" なら確認だけ（延長も書き換えもしない）
   SECRET_NAME           書き換える Secret の名前（省略時 THREADS_ACCESS_TOKEN）
 """
@@ -80,12 +82,6 @@ def main():
                  f"- Secret を書き換える用の GH_SECRETS_PAT: {'設定あり' if GH_TOKEN else '未設定（延長するには必要）'}"])
         return
 
-    if not GH_TOKEN:
-        fail("Secret「GH_SECRETS_PAT」が未設定なので、延長しても新しいトークンを保存できません（延長はしていません）。"
-             "SETUP.md の「トークンの自動更新」の手順で作って入れてください。")
-    if not REPO:
-        fail("GITHUB_REPOSITORY が分かりません（GitHub Actions の中で動かしてください）。")
-
     ok, data = get("refresh_access_token", {"grant_type": "th_refresh_token", "access_token": TOKEN})
     if not ok:
         fail("延長に失敗しました。発行から24時間たっていないトークンは延長できません（次の週に自動で再挑戦します）。"
@@ -106,17 +102,30 @@ def main():
     if not ok or me2.get("id") != me.get("id"):
         fail(f"新しいトークンの動作確認に失敗したので、Secret は書き換えていません。\n\nエラー: {me2}")
 
-    r = subprocess.run(["gh", "secret", "set", SECRET_NAME, "--repo", REPO],
-                       input=new, text=True, capture_output=True)
-    if r.returncode != 0:
-        fail("Secret の書き換えに失敗しました。GH_SECRETS_PAT の権限（このリポジトリの Secrets: Read and write）"
-             "と有効期限を確認してください。\n\n"
-             f"エラー: {mask((r.stderr or r.stdout or '').strip())[:400]}")
+    if new == TOKEN:
+        # 同じ文字のまま期限だけ延びた → Secret の書き換えは不要（GH_SECRETS_PAT もいらない）
+        saved = "トークンの文字は同じまま、期限だけ延びました（Secret の書き換えは不要）"
+    else:
+        if not GH_TOKEN or not REPO:
+            ok_old, _ = get("v1.0/me", {"fields": "id", "access_token": TOKEN})
+            fail("延長したら新しい文字のトークンが発行されましたが、Secret「GH_SECRETS_PAT」が未設定のため保存できませんでした。"
+                 f"（今 Secret に入っている古いトークンは、今この時点で{'まだ使えます' if ok_old else '使えません'}）\n\n"
+                 "SETUP.md の「トークンの自動更新」の手順2〜3で GH_SECRETS_PAT を入れてください。")
+        try:
+            r = subprocess.run(["gh", "secret", "set", SECRET_NAME, "--repo", REPO],
+                               input=new, text=True, capture_output=True)
+        except FileNotFoundError:
+            fail("Secret を書き換える道具（gh）が見つかりません。GitHub Actions の中で動かしてください。")
+        if r.returncode != 0:
+            fail("Secret の書き換えに失敗しました。GH_SECRETS_PAT の権限（このリポジトリの Secrets: Read and write）"
+                 "と有効期限を確認してください。\n\n"
+                 f"エラー: {mask((r.stderr or r.stdout or '').strip())[:400]}")
+        saved = f"Secret「{SECRET_NAME}」を新しいトークンに書き換えました（値は表示しません）"
 
     now = datetime.now(JST)
     lines = ["## Threadsトークン自動更新：成功", "",
              f"- アカウント: @{user}",
-             f"- Secret「{SECRET_NAME}」を新しいトークンに書き換えました（値は表示しません）"]
+             f"- {saved}"]
     if expires_in:
         until = now + timedelta(seconds=expires_in)
         lines.append(f"- 新しい期限: {until.strftime('%Y-%m-%d %H:%M')}（日本時間・あと約{expires_in // 86400}日）")

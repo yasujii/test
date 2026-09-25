@@ -7,8 +7,8 @@ name: 桜腸活 Threadsトークン自動更新
 #
 # 必要な Secret（リポジトリの Settings → Secrets and variables → Actions）:
 #   THREADS_ACCESS_TOKEN : Threads の長期トークン（最初の1回だけ手で入れる。以後はこの処理が書き換える）
-#   GH_SECRETS_PAT       : Secret を書き換えるための GitHub トークン（Fine-grained）
-#                          対象はこのリポジトリだけ／Secrets: Read and write／Actions: Read and write
+#   GH_SECRETS_PAT       : （延長でトークンの文字が変わる場合だけ必要）Secret を書き換えるための GitHub トークン
+#                          Fine-grained／対象はこのリポジトリだけ／Secrets: Read and write
 # 手順は threads-autopost/SETUP.md の「トークンの自動更新」。
 #
 # 注意: schedule（定期実行）と手動ボタンは、このファイルが「標準ブランチ」にあるときだけ使える。
@@ -27,9 +27,11 @@ on:
       - "threads-autopost/refresh_token.py"
       - ".github/workflows/threads-token-refresh.yml"
 
-# リポジトリ自体は読むだけ。Secret の書き換えは GH_SECRETS_PAT で行う。
+# リポジトリ自体は読むだけ。actions: write は「定期実行を有効にし直す」ためだけに使う。
+# Secret の書き換え（必要なときだけ）は GH_SECRETS_PAT で行う。
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: threads-token-refresh
@@ -62,5 +64,5 @@ jobs:
         if: always() && github.event_name != 'push'
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.GH_SECRETS_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/threads-token-refresh.yml/enable"
