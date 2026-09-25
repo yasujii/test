@@ -16,6 +16,7 @@
 - YouTube：環境「yasujii（安G）」の `GSC_SA_JSON`（Googleの認証情報）で公式APIを使う。個人で発信しているチャンネルだけ。コメントした人の名前やIDは保存しない。
 - 知恵袋：robots.txtで許可されたカテゴリ一覧だけ（検索ページは使わない）。2.5秒以上あける。
 - Threads：公式APIは読み取り専用で、自分の投稿の数字だけ。他アカウントの分析に **Claude in Chrome は使わない**（2026-09-25 ユーザー指示）。他の方法は `threads/40_他アカウント伸び投稿の分析.md` の調査結果に沿う。
+- 2026-09-25 の実験（`threads-autopost/others_probe.py`）で確認済み：長期トークンでは他人の投稿は検索できず（547件中0件）、他人の投稿ごとの表示回数は項目自体が存在しない。コネクタ（MCP）も同じ窓口なので同じ。
 - Threadsのトークンは GitHub の Secret `THREADS_ACCESS_TOKEN` に入れる。`.github/workflows/threads-token-refresh.yml` が毎週月曜に自動延長して書き換える（書き換え用に Secret `GH_SECRETS_PAT` が必要）。トークンの値はファイル・コマンド・返事に絶対に書かない。
 - 集めた生データとデータベースは公開リポジトリに載せない（.gitignore済み）。ユーザーに直接渡す。
 
