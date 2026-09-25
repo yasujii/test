@@ -1,0 +1,66 @@
+name: 桜腸活 Threadsトークン自動更新
+
+# 目的: Threads の長期トークン（60日で切れる）を毎週延長して、
+#       Secret「THREADS_ACCESS_TOKEN」を新しい値に書き換える。
+# Threads への投稿・削除は一切しない（GETのみ）。自動投稿（threads-autopost.yml）は停止中のままで、
+# このファイルとは関係しない。
+#
+# 必要な Secret（リポジトリの Settings → Secrets and variables → Actions）:
+#   THREADS_ACCESS_TOKEN : Threads の長期トークン（最初の1回だけ手で入れる。以後はこの処理が書き換える）
+#   GH_SECRETS_PAT       : Secret を書き換えるための GitHub トークン（Fine-grained）
+#                          対象はこのリポジトリだけ／Secrets: Read and write／Actions: Read and write
+# 手順は threads-autopost/SETUP.md の「トークンの自動更新」。
+#
+# 注意: schedule（定期実行）と手動ボタンは、このファイルが「標準ブランチ」にあるときだけ使える。
+on:
+  schedule:
+    - cron: "13 19 * * 0"   # 毎週月曜 4:13（日本時間）。毎週延長するので60日を過ぎることはない
+  workflow_dispatch:        # 手動実行ボタン
+    inputs:
+      check_only:
+        description: "確認だけ（延長せず、今のトークンが使えるかだけ見る）"
+        type: boolean
+        default: false
+  push:                     # このファイルを直したときの動作確認（確認だけ・延長はしない）
+    branches: ["claude/threads-growth-strategy-wilbpe"]
+    paths:
+      - "threads-autopost/refresh_token.py"
+      - ".github/workflows/threads-token-refresh.yml"
+
+# リポジトリ自体は読むだけ。Secret の書き換えは GH_SECRETS_PAT で行う。
+permissions:
+  contents: read
+
+concurrency:
+  group: threads-token-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: トークンを延長して Secret を書き換える
+        env:
+          # トークンは「Secrets」から渡す（コードには絶対書かない）
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_SECRETS_PAT }}
+          # push のときと「確認だけ」を選んだときは延長しない
+          DRY_RUN: ${{ github.event_name == 'push' || inputs.check_only }}
+        run: python threads-autopost/refresh_token.py
+
+      - name: 定期実行が止まらないようにする
+        # 公開リポジトリは60日間動きがないと定期実行が自動で止まるため、毎回「有効」にし直す
+        if: always() && github.event_name != 'push'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_SECRETS_PAT }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/threads-token-refresh.yml/enable"

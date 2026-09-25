@@ -119,3 +119,42 @@ GitHub Actions の**定期実行は「デフォルトブランチ」にあるワ
    - `permission` 系でpushが失敗 → リポジトリ Settings → Actions → General →
      Workflow permissions を **Read and write permissions** にする
 3. それでも不明なら、そのログを私に貼ってください。直します。
+
+---
+
+## トークンの自動更新（60日の期限切れ対策）
+
+Threads の長期トークンは**60日で切れます**。`.github/workflows/threads-token-refresh.yml` が
+**毎週月曜 4:13（日本時間）に自動で延長**し、Secret `THREADS_ACCESS_TOKEN` を新しい値に書き換えます。
+毎週延長するので、動いている限り期限切れにはなりません。Threads への投稿・削除は一切しません。
+
+### 最初に1回だけやること
+
+1. **長期トークンを Secret に入れる**
+   - Settings → Secrets and variables → Actions → `THREADS_ACCESS_TOKEN` の鉛筆マーク（Update）→ 値を貼って保存
+   - チャットに貼ってしまったトークンは会話の記録に残るので、安全のためには作り直したものを入れるのがおすすめです
+2. **Secret を書き換えるための GitHub トークンを作る**（GitHub の決まりで、Actions 標準の権限では Secret を書き換えられないため）
+   - GitHub 右上の自分のアイコン → **Settings** → 左下 **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
+   - Token name：`threads-token-refresh` など
+   - Expiration（有効期限）：選べる中で長め（例：1年）。切れる前にカレンダーに予定を入れておく
+   - Repository access：**Only select repositories** → `yasujii/test` だけ
+   - Permissions → Repository permissions：**Secrets = Read and write**、**Actions = Read and write**（Metadata は自動で Read-only）
+   - **Generate token** → 表示された値をコピー
+3. **2で作った値を Secret に入れる**
+   - Settings → Secrets and variables → Actions → **New repository secret**
+   - Name：`GH_SECRETS_PAT`／Secret：2でコピーした値 → **Add secret**
+   - この値もチャットには貼らないでください
+4. **この仕組みを標準ブランチに置く**（定期実行と手動ボタンは標準ブランチにあるファイルだけが動く）
+   - PR をマージするか、Claude に「トークン自動更新だけ標準ブランチに入れて」と頼む
+5. **動作確認**
+   - Actions → 「桜腸活 Threadsトークン自動更新」→ **Run workflow** → 「確認だけ」にチェック → 緑になれば準備OK
+   - チェックなしで実行すると本当に延長します。結果ページに「新しい期限：◯月◯日」と出れば成功
+   - ※ 発行から24時間たっていないトークンは延長できません。作った当日は「確認だけ」にして、延長は翌日以降（または月曜の自動実行）に任せてください
+
+### 失敗したとき
+
+- 失敗すると GitHub からメールが届きます。実行結果のページに日本語で原因が出ます
+  - 「今のトークンが使えません」→ 期限切れか取り消し。作り直して手順1をやり直す
+  - 「GH_SECRETS_PAT が未設定」「Secret の書き換えに失敗」→ 手順2〜3を確認（有効期限切れも多い）
+  - 「延長に失敗」→ 発行から24時間たっていない可能性。次の週に自動で再挑戦します
+- 公開リポジトリは60日間動きがないと定期実行が自動で止まりますが、この処理は毎回自分自身を「有効」にし直すので止まりにくくしてあります
