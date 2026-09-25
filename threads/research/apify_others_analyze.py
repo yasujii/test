@@ -73,11 +73,13 @@ THEMES = [
 # ---- マネタイズの印 ----
 LINK_KINDS = [
     ("楽天", r"rakuten\.co\.jp|(^|\.)r10\.to|hb\.afl\.rakuten|room\.rakuten"),
-    ("Amazon", r"amazon\.co\.jp|amazon\.com|amzn\.to|amzn\.asia"),
+    ("Amazon", r"amazon\.co\.jp|amazon\.com|amzn\.to|amzn\.asia|link\.amazon"),
     ("ASP（A8・もしも等）", r"a8\.net|moshimo\.com|valuecommerce|afi-b\.com|accesstrade|felmat|rentracks|linksynergy"),
-    ("有料コンテンツ（note・Brain等）", r"note\.com|note\.mu|brain-market|tips\.jp|mond\.how|coconala|booth\.pm|udemy"),
+    ("有料コンテンツ（Brain等）", r"brain-market|tips\.jp|mond\.how|coconala|booth\.pm|udemy"),
+    ("note", r"note\.com|note\.mu"),
     ("ネットショップ", r"stores\.jp|base\.shop|thebase\.in|shopify|myshopify|minne|creema|mercari"),
-    ("LINE", r"lin\.ee|line\.me|liff\.line\.me"),
+    ("LINE", r"lin\.ee|line\.me|liff\.line\.me|lmes\.jp|lstep|l-step|utage"),
+    ("無料配布ページ（Notion等）", r"notion\.site|notion\.so|app\.notion\.com"),
     ("リンク集", r"lit\.link|linktr\.ee|linkco\.re|profu\.link|potofu\.me|bio\.link|instabio|tap\.bio"),
     ("他のSNS", r"instagram\.com|youtube\.com|youtu\.be|tiktok\.com|x\.com|twitter\.com"),
 ]
@@ -88,7 +90,8 @@ TEXT_SIGNS = [
     ("LINE・特典への誘導", r"LINE(登録|で|に)|公式LINE|無料(で)?プレゼント|限定(配布|公開)|特典"),
     ("商品の紹介", r"買って(よかった|良かった)|愛用|リピ|購入|おすすめ(の|です)|クーポン|セール"),
 ]
-PAID_KINDS = {"楽天", "Amazon", "ASP（A8・もしも等）", "有料コンテンツ（note・Brain等）", "ネットショップ"}
+PAID_KINDS = {"楽天", "Amazon", "ASP（A8・もしも等）", "有料コンテンツ（Brain等）", "ネットショップ"}
+LEAD_KINDS = {"LINE", "リンク集", "note", "無料配布ページ（Notion等）"}
 
 
 def link_kinds(urls):
@@ -215,7 +218,11 @@ def main():
         # アカウント情報（投稿の行にも付いてくることがある）
         p = profiles.setdefault(u, {"followers": None, "bio": "", "bio_links": set(), "verified": None})
         if it.get("followers_count") is not None:
-            p["followers"] = it.get("followers_count")
+            p["followers"] = max(p["followers"] or 0, it.get("followers_count"))
+        # 投稿ペース用：アカウント指定で取った最新の投稿（固定投稿を除く・ツリーも含む）だけを使う
+        # （検索で拾った古い投稿を混ぜると期間が伸びてペースが低く出るため）
+        if it.get("requested_username") and it.get("post_code") and not it.get("is_pinned") and it.get("created_at"):
+            p.setdefault("_times", set()).add((it["post_code"], it["created_at"], bool(it.get("is_reply"))))
         if it.get("bio"):
             p["bio"] = it.get("bio")
         for l in (it.get("bio_links") or []) + (it.get("external_links") or []):
@@ -277,8 +284,10 @@ def main():
         by_u[r["アカウント名"][1:]].append(r)
     acc_rows = []
     for u, rs in by_u.items():
-        ts = sorted(r["_t"] for r in rs if r["_t"])
-        span = max(1.0, (ts[-1] - ts[0]).total_seconds() / 86400) if len(ts) >= 2 else None
+        tl = sorted(profiles.get(u, {}).get("_times", set()), key=lambda x: x[1])
+        tt = [jst(x[1]) for x in tl if jst(x[1])]
+        roots = sum(1 for x in tl if not x[2])
+        span = max(1.0, (tt[-1] - tt[0]).total_seconds() / 86400) if len(tt) >= 5 else None
         vs = [r["_views"] for r in rs if r["_views"] is not None]
         p = profiles.get(u, {})
         post_kinds = set()
@@ -295,13 +304,13 @@ def main():
         all_kinds = post_kinds | reply_kinds | bio_kinds
         if all_kinds & PAID_KINDS or "タイアップ表示" in signs or "PR表記" in signs:
             judge = "している（売上につながるリンク・PR表記あり）"
-        elif all_kinds & {"LINE", "リンク集"} or signs & {"LINE・特典への誘導", "プロフ・固定への誘導"}:
-            judge = "導線あり（LINE・リンク集などで集客）"
+        elif all_kinds & LEAD_KINDS or signs & {"LINE・特典への誘導", "プロフ・固定への誘導"}:
+            judge = "導線あり（LINE・note・無料配布などで集客）"
         else:
             judge = "見当たらない"
         acc_rows.append({
             "アカウント名": "@" + u, "フォロワー数": p.get("followers"), "集めた投稿数": len(rs),
-            "1日あたりの投稿数（目安）": round(len(ts) / span, 1) if span else "",
+            "1日あたりの投稿数（目安・1枚目だけ）": round(roots / span, 1) if span else "",
             "表示回数の中央値": med(vs), "表示回数の最高": max(vs) if vs else "",
             "1万回超えの本数": sum(1 for v in vs if v >= a.min_views),
             "プロフのリンク": "・".join(sorted(bio_kinds)), "投稿のリンク": "・".join(sorted(post_kinds)),
