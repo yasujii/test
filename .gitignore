@@ -12,3 +12,4 @@ threads/research/raw/
 threads/research/*.sqlite
 threads/research/exports/
 threads/research/*.zip
+threads/research/*.sqlite-journal
