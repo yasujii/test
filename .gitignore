@@ -11,3 +11,4 @@ __pycache__/
 threads/research/raw/
 threads/research/*.sqlite
 threads/research/exports/
+threads/research/*.zip
