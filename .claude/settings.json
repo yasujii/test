@@ -1,0 +1,7 @@
+{
+  "env": {
+    "MAX_MCP_OUTPUT_TOKENS": "15000"
+  },
+  "bashOutputMaxChars": 15000,
+  "skillListingMaxDescChars": 400
+}
