@@ -1,0 +1,8 @@
+{
+  "language": "japanese",
+  "permissions": {
+    "allow": [
+      "mcp__MCP"
+    ]
+  }
+}

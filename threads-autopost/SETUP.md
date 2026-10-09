@@ -119,3 +119,42 @@ GitHub Actions の**定期実行は「デフォルトブランチ」にあるワ
    - `permission` 系でpushが失敗 → リポジトリ Settings → Actions → General →
      Workflow permissions を **Read and write permissions** にする
 3. それでも不明なら、そのログを私に貼ってください。直します。
+
+---
+
+## トークンの自動更新（60日の期限切れ対策）
+
+Threads の長期トークンは**60日で切れます**。`.github/workflows/threads-token-refresh.yml` が
+**毎週月曜 4:13（日本時間）に自動で延長**し、Secret `THREADS_ACCESS_TOKEN` を新しい値に書き換えます。
+毎週延長するので、動いている限り期限切れにはなりません。Threads への投稿・削除は一切しません。
+
+### 今の状態（2026-09-25）
+
+- 仕組みは標準ブランチに入れ済み。**あなたがやることは、今はありません。**
+- Secret に入っているトークンは有効（期限 2026-11-24）。最初の自動延長は 9/28（月）4:13。
+- 延長してもトークンの文字が変わらなければ、これだけで完結します。
+- 延長で**新しい文字のトークンが発行された場合だけ**、それを保存するための鍵 `GH_SECRETS_PAT` が必要になります。
+  そのときは実行結果に「GH_SECRETS_PAT が未設定」と出るので、下の手順で作ってください（古いトークンは期限まで使えます）。
+
+### 鍵 GH_SECRETS_PAT の作り方（必要になったときだけ）
+
+1. GitHub 右上の自分のアイコン → **Settings** → 左下 **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
+2. Token name：`threads-token-refresh`／Expiration：選べる中で長め（例：1年）
+3. Repository access：**Only select repositories** → `yasujii/test` だけ
+4. Permissions → Repository permissions：**Secrets = Read and write**（Metadata は自動で Read-only）
+5. **Generate token** → 表示された値をコピー
+6. リポジトリの Settings → Secrets and variables → Actions → **New repository secret** → Name：`GH_SECRETS_PAT`／Secret：コピーした値 → **Add secret**
+7. この値はチャットに貼らないでください
+
+### 動作確認
+
+- Actions → 「桜腸活 Threadsトークン自動更新」→ **Run workflow** → 「確認だけ」にチェック → 緑になればOK
+- ※ 発行から24時間たっていないトークンは延長できません
+
+### 失敗したとき
+
+- 失敗すると GitHub からメールが届きます。実行結果のページに日本語で原因が出ます
+  - 「今のトークンが使えません」→ 期限切れか取り消し。作り直して Secret `THREADS_ACCESS_TOKEN` に入れ直す
+  - 「GH_SECRETS_PAT が未設定」「Secret の書き換えに失敗」→ 上の「鍵 GH_SECRETS_PAT の作り方」をやる（鍵の有効期限切れも多い）
+  - 「延長に失敗」→ 発行から24時間たっていない可能性。次の週に自動で再挑戦します
+- 公開リポジトリは60日間動きがないと定期実行が自動で止まりますが、この処理は毎回自分自身を「有効」にし直すので止まりにくくしてあります（鍵は不要）
