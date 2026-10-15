@@ -1,0 +1,36 @@
+name: 桜腸活 他人の投稿が取れるかの実験（読み取り専用）
+
+# 目的: GitHub Secret の長期トークンで、他人の投稿・他人の投稿の表示回数が取れるかを実際に叩いて確かめる。
+# 投稿・いいね・フォローは一切しない（GETのみ）。ログには他人の本文やアカウント名を出さない。
+on:
+  workflow_dispatch:        # 手動実行ボタン
+  push:
+    branches: ["claude/threads-growth-strategy-wilbpe"]
+    paths:
+      - "threads-autopost/others_probe.py"
+      - ".github/workflows/threads-others-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threads-others-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を準備
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 他人の投稿と表示回数が取れるか試す
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: python threads-autopost/others_probe.py

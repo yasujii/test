@@ -6,3 +6,10 @@
 *.jpeg
 __pycache__/
 *.pyc
+
+# ラッコキーワード由来の生データ・DB・書き出し（公開リポジトリには載せない。本人に直接納品）
+threads/research/raw/
+threads/research/*.sqlite
+threads/research/exports/
+threads/research/*.zip
+threads/research/*.sqlite-journal
